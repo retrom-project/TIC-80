@@ -1,0 +1,48 @@
+name: Retrom Web release
+on:
+  push:
+    tags: ['retrom-core-g4aba09c98f1e-r*']
+permissions:
+  contents: write
+concurrency:
+  group: retrom-web-release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - name: Validate annotated maintenance-line tag
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin '+refs/heads/retrom/g4aba09c98f1e:refs/remotes/origin/retrom/g4aba09c98f1e'
+          # Checkout may flatten its local tag ref to the peeled commit.
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          test "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" = tag
+          test "$(git rev-list -n 1 "refs/tags/$GITHUB_REF_NAME")" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/retrom/g4aba09c98f1e
+          git merge-base --is-ancestor 4aba09c98f1e5028b82765be1647677b08d35942 "$GITHUB_SHA"
+          test -z "$(git rev-list --min-parents=2 4aba09c98f1e5028b82765be1647677b08d35942.."$GITHUB_SHA")"
+      - name: Build and test Web assets
+        run: |
+          mkdir -p "$RUNNER_TEMP/core-release"
+          .github/rpg-runtime/build-web.sh "$RUNNER_TEMP/core-release"
+      - name: Validate and describe the exact assets
+        run: |
+          python3 .github/rpg-runtime/verify-release.py --output "$RUNNER_TEMP/core-release" \
+            --repository "https://github.com/$GITHUB_REPOSITORY" --tag "$GITHUB_REF_NAME" --commit "$GITHUB_SHA"
+      - name: Publish immutable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=()
+          if [[ "$GITHUB_REF_NAME" == *-rc.* ]]; then prerelease+=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" "${prerelease[@]}" --verify-tag \
+            --title "tic80 Web $GITHUB_REF_NAME" --generate-notes \
+            "$RUNNER_TEMP/core-release/tic80-retrom.mjs" "$RUNNER_TEMP/core-release/tic80-retrom.wasm" \
+            "$RUNNER_TEMP/core-release/LICENSES.txt" "$RUNNER_TEMP/core-release/rpg-runtime-release.json"
