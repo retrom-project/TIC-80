@@ -192,3 +192,8 @@ include(cmake/n3ds.cmake)
 include(cmake/nswitch.cmake)
 
 include(cmake/install.cmake)
+
+option(BUILD_RETROM_WEB "Build the Retrom browser core ABI" OFF)
+if(BUILD_RETROM_WEB)
+    include(retrom/web.cmake)
+endif()
